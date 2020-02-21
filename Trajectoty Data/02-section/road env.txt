@@ -1,3 +1,0 @@
-video: 02-section
-slow mix,mix fast,center
-3.48, 2.91, 2.82
