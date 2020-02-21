@@ -1,138 +1,6 @@
 import pandas as pd
 import numpy as np
 import os, sys
-import time
-
-
-class Simulation:
-    def __init__(self, input_time_step=5, output_time_step=5):
-        self.INPUT_TIME_STEP = input_time_step
-        self.OUTPUT_TIME_STEP = output_time_step
-
-    def data_generator(self, base_dir="C:/Users/User/Google Drive/Master Thesis/Trajectory Data", input_var=None, output_var=None):
-        env_list, x, y = [], None, None
-        final_data_dir = os.path.split(base_dir)[0] + '/Data'
-        # 對 base資料夾中每個 環境資料夾 做事
-        for env_name in os.listdir(base_dir):
-            print(env_name, end=', ')
-            env_start_time = time.time()
-            env_path = os.path.join(base_dir, env_name)
-            final_env_path = os.path.join(final_data_dir, env_name)
-
-            if not os.path.isdir(env_path):
-                continue                    # 跳過 base_dir 裡(非環境目錄)的檔案
-            elif not os.path.isdir(final_env_path):
-                os.mkdir(final_env_path)    # 若存放計算過車輛資料的環境目錄不存在，就建立新的環境目錄
-            # 跳過已經計算過的環境 (已經有 X.npy, Y.npy)
-            if os.path.isfile(os.path.join(final_env_path, 'X.npy')) and os.path.isfile(os.path.join(final_env_path, 'Y.npy')):
-                env_x = np.load(os.path.join(final_env_path, 'X.npy'), allow_pickle=True)
-                env_y = np.load(os.path.join(final_env_path, 'Y.npy'), allow_pickle=True)    # 從 .npy 檔載入已經算好的數據
-                print('env_x.shape:', env_x.shape)
-                print('env_y.shape:', env_y.shape)
-                # 如果 x 或 y 是空的
-                if x is None or y is None:
-                    x = env_x.copy()
-                    y = env_y.copy()
-                else:
-                    x = np.vstack([x, env_x])
-                    y = np.vstack([y, env_y])
-                continue
-            else:
-                env_x, env_y = [], []
-            # 建立新的 Environment 物件並命名
-            env = Environment(name=env_name)
-            # 對環境資料夾中每個 車輛軌跡檔, road env 檔做事
-            for veh_num in os.listdir(env_path):
-                # print(veh_num, end=', ')
-                # 用 road env 檔建立道路環境設施
-                if veh_num == 'road env.txt':
-                    df_env = pd.read_csv(os.path.join(base_dir, env_name, veh_num), header=1, encoding='utf-8')
-                    slow_mix = df_env.loc[0, 'slow mix']
-                    mix_fast = slow_mix + df_env.loc[0, 'mix fast']
-                    center = mix_fast + df_env.loc[0, 'center']
-                    env.set_env(curb=0.0, slow_mix=slow_mix, mix_fast=mix_fast, center=center)    # 設定道路設施參數
-                    continue
-                elif veh_num.split('.')[-1] != 'txt':
-                    continue              # 跳過非 .txt 檔
-                traj_file = os.path.join(base_dir, env_name, veh_num)
-                vtype = veh_num.split('.')[0].split('_')[1]      # 取得車種
-                veh = Vehicle(vtype)                             # 建立新的 Vehicle 物件
-                veh.load_data(traj_file)                         # 載入車輛軌跡檔
-                env.add_vehicles(veh)                            # 在當前環境加入該車輛
-            # 將該環境放入環境 list 中
-            env_list.append(env)
-
-            for veh in env.get_data():
-                # 跳過不是機車的車輛
-                if veh.get_type() != 'motor':
-                    continue
-                else:
-                    # 將計算好的車輛資料存成.csv
-                    veh_name = str(veh.num) + veh.get_type()
-                    veh.data.to_csv(os.path.join(final_env_path, veh_name+'.csv'), index=False, encoding='utf-8')
-                x_features = self.__input(input_var=input_var)
-                y_features = self.__output(output_var=output_var)
-                veh_dropna = veh.data.dropna(axis=0, subset=y_features).copy()
-                veh_dropna = veh_dropna.reset_index(drop=True)
-                veh_dropna_in = veh_dropna.reindex(columns=x_features)
-                veh_dropna_out = veh_dropna.reindex(columns=y_features)
-
-                for index in range(self.INPUT_TIME_STEP, len(veh_dropna)-self.OUTPUT_TIME_STEP+1):
-                    env_x.append(np.array(veh_dropna_in.loc[index-self.INPUT_TIME_STEP:index-1, :]))
-                    env_y.append(np.array(veh_dropna_out.loc[index:index+self.OUTPUT_TIME_STEP-1, :]))
-            env_x = np.array(env_x)
-            env_y = np.array(env_y)
-            np.save(os.path.join(env_path, 'X.npy'), env_x)
-            np.save(os.path.join(env_path, 'Y.npy'), env_y)
-            # 將 env_x, env_y 放進 x, y
-            if x is None or y is None:
-                x = env_x.copy()
-                y = env_y.copy()
-            else:
-                x = np.vstack([x, env_x])
-                y = np.vstack([y, env_y])
-            print('time spent: %.2f' % (time.time() - env_start_time))    # print 出產生此環境數據所花費的時間
-
-        print('x.shape:', x.shape)
-        print('y.shape:', y.shape)
-        NUM_INPUT_ATTRIBUTES = x.shape[-1]
-        NUM_OUTPUT_ATTRIBUTES = y.shape[-1]
-        # reshaping
-        x_reshape = np.reshape(x, (x.shape[0], self.INPUT_TIME_STEP, NUM_INPUT_ATTRIBUTES))
-        y_reshape = np.reshape(y, (y.shape[0], self.OUTPUT_TIME_STEP, NUM_OUTPUT_ATTRIBUTES))
-
-        return x_reshape, y_reshape, env_list
-
-    def __set_features(self, input_var):
-        features = ['v_lon', 'v_lat', 'a_lon', 'a_lat',
-                    'type_F', 'rx_F', 'ry_F', 'space_F', 'v_lon_F', 'v_lat_F',
-                    'type_LF', 'rx_LF', 'ry_LF', 'space_LF', 'v_lon_LF', 'v_lat_LF',
-                    'type_RF', 'rx_RF', 'ry_RF', 'space_RF', 'v_lon_RF', 'v_lat_RF',
-                    'type_LR', 'rx_LR', 'ry_LR', 'space_LR', 'v_lon_LR', 'v_lat_LR',
-                    'type_RR', 'rx_RR', 'ry_RR', 'space_RR', 'v_lon_RR', 'v_lat_RR',
-                    'curb', 'slow mix', 'mix fast', 'center']
-        if input_var is None or input_var == 'v':
-            features.remove('a_lon')
-            features.remove('a_lat')
-            return features
-        elif input_var == 'a':
-            features.remove('v_lon')
-            features.remove('v_lat')
-            return features
-        else:
-            print('The input variables are limited to V or A.')
-            sys.exit(0)
-
-    def __output(self, output_var):
-        if output_var is None or output_var == 'v':
-            features = ['v_lon', 'v_lat']
-            return features
-        elif output_var == 'a':
-            features = ['a_lon', 'a_lat']
-            return features
-        else:
-            print('The output variables are limited to V or A.')
-            sys.exit(0)
 
 
 class Environment:
@@ -140,8 +8,11 @@ class Environment:
         DataFrame的子類別
         存某段時間內所有時點包含的車輛
     """
-    def __init__(self, name=None):
+    def __init__(self, name=None, base_dir=None):
+        self.input_var = []
+        self.output_var = []
         self.__name = name
+        self.__base_dir = base_dir  # 記錄環境所在目錄位置
         self.__data = dict()        # 環境中所有的車輛物件key: 編號
         self.__time_step = dict()   # 整段時間中，所有時點包含的車輛
         self.__start_time = None    # 記錄整段時間中，第一個時點的時間(t(n=0))
@@ -172,23 +43,34 @@ class Environment:
                 if veh in self.__data.values():
                     print("The vehicle is already in the environment.")
                     continue
-                veh.num = len(self.__data)           # 設定車輛編號
-                self.__data[len(self.__data)] = veh  # 將車輛添加到__data字典裡
+                self.__data[veh.num] = veh  # 將車輛添加到__data字典裡
                 self.__add_to_time_step(veh)         # 將車輛依所在時點加入到__time_step字典裡
                 self.__update_time(veh)              # 更新 start/end time
         return "Number of vehicles  in the environment:", len(self.__data)
 
     def get_data(self, sim_motor='all', sur_vehicles='all', interval='all'):
         """針對每台機車做計算"""
-        # 如果要取得環境中每輛機車的 data, 且所有車都可被當作是環境車
+        final_env_path = os.path.join(self.__base_dir, os.pardir, os.pardir, "Data", self.__name)
+
+        # 如果要取得環境中每輛機車的 data, 且所有車都可被當作是周圍車
         if sim_motor == 'all' and sur_vehicles == 'all':
             # 每個__data dict裡的 keys (環境中的每輛車)
             for veh in self.__data.values():
+                veh_name = str(veh.num) + '_' + veh.get_type()
+
                 # 跳過不是機車的車輛
                 if veh.get_type() != 'motor':
                     continue
+                # 跳過已經計算過且存檔的機車
+                elif os.path.isfile(os.path.join(final_env_path, veh_name + '.csv')):
+                    veh.data = pd.read_csv(os.path.join(final_env_path, veh_name + '.csv'), encoding='utf-8')
+                    continue
+
                 self.__calculate_surrounding_vehicles(veh)   # 計算此機車的環境車輛變數
                 self.__calculate_env(veh)                    # 計算此機車的環境變數
+                
+                # 將計算好的車輛資料存成.csv
+                veh.data.to_csv(os.path.join(final_env_path, veh_name+'.csv'), index=False, encoding='utf-8')
         return self.__data.values()   # 回傳 __data.values() (整個環境下的所有車輛)
 
     def remove_vehicles(self, veh):
@@ -216,26 +98,23 @@ class Environment:
 
         for facility in ['curb', 'slow_mix', 'mix_fast', 'center']:
             veh.data[facility] = veh.data['y'] - self.__road_env[facility]
-            veh.data.loc[abs(veh.data[facility]) <= (width / 2), facility] = 0.0
-            veh.data.loc[(abs(veh.data[facility]) > (width / 2) & veh.data[facility] > 0), facility] - (width / 2)
-            veh.data.loc[(abs(veh.data[facility]) > (width / 2) & veh.data[facility] < 0), facility] + (width / 2)
+            veh.data.loc[abs(veh.data[facility]) <= (width / 2), facility] = 0.0                                    # 與標線距離在1/2車寬內
+            veh.data.loc[veh.data[facility] > (width / 2), facility] - (width / 2)
+            veh.data.loc[veh.data[facility] < -(width / 2), facility] + (width / 2)
 
     def __calculate_surrounding_vehicles(self, veh):
         """
         計算每時點的環境車輛相關變數
         :param veh: 本車
         """
-        veh.add_columns(cols=['num_F', 'type_F', 'rx_F', 'ry_F', 'space_F', 'rv_lon_F', 'rv_lat_F',
-                              'num_LF', 'type_LF', 'rx_LF', 'ry_LF', 'space_LF', 'rv_lon_LF', 'rv_lat_LF',
-                              'num_RF', 'type_RF', 'rx_RF', 'ry_RF', 'space_RF', 'rv_lon_RF', 'rv_lat_RF',
-                              'num_LR', 'type_LR', 'rx_LR', 'ry_LR', 'space_LR', 'rv_lon_LR', 'rv_lat_LR',
-                              'num_RR', 'type_RR', 'rx_RR', 'ry_RR', 'space_RR', 'rv_lon_RR', 'rv_lat_RR'], value=np.nan)    # 創建環境車輛相關欄位
+        sur_cols = ['num', 'type', 'rx', 'ry', 'space', 'rv_lon', 'rv_lat']
+        veh.add_columns(cols=sur_cols, is_sur=True, value=np.nan)    # 創建環境車輛相關columns
 
         for ts in veh.data['t']:
             sur_vehicles = self.__drop_self(v_list=self.__time_step[ts], veh=veh)
 
             for sur_veh in sur_vehicles:
-                veh.switch_direction(sur_veh=sur_veh, time_step=ts)   # 計算該時點個方向的周圍車
+                veh.switch_direction(sur_veh=sur_veh, time_step=ts)                 # 計算該時點各方向的周圍車
         pass
 
     def __drop_self(self, v_list, veh):
@@ -283,15 +162,22 @@ class Vehicle:
     def __init__(self, vtype='motor'):
         self.data = None        # 每時點的資料
         self.num = None         # 編號
+        self.turn = False       # 是否為左/右轉車，預設是直行車
         self.__type = vtype     # 車種
         self.__set_size()       # 設定length, width
+        self.__sur_direction = ['F', 'LF', 'RF', 'LR', 'RR']
 
     def __str__(self):
         return str(self.num) + '_' + self.__type   # print Vehicle出來時，格式為num_type
 
-    def add_columns(self, cols, value=np.nan):
-        for col in cols:
-            self.data[col] = value
+    def add_columns(self, cols, is_sur=False, value=np.nan):
+        if is_sur:
+            for sur_direction in self.__sur_direction:
+                for col in cols:
+                    self.data["%s_%s" % (col, sur_direction)] = value
+        else:
+            for col in cols:
+                self.data[col] = value
         pass
 
     def direction(self, sur_veh, time_step):
@@ -367,7 +253,7 @@ class Vehicle:
                 names=['t', 'x', 'y', 'v_lon', 'v_lat', 'a_lon', 'a_lat', 'theta'],
                 encoding='utf-8'
             )
-        # self.data['t'] = np.around(self.data['t'], decimals=3)
+        self.num = os.path.split(file)[1].split('_')[0]
         self.__calculate()  # 計算速度、加速度、行進角度
 
         return self.data
@@ -388,24 +274,19 @@ class Vehicle:
             print('self:', self)
             print('sur_veh:', sur_veh)
             print('time_step:', time_step)
+        ##
+        self_veh = self.data.loc[self.data['t'] == time_step, :]
+        sur_veh_t = sur_veh.data.loc[sur_veh.data['t'] == time_step, :]
         # 某方位的環境車輛與本車的距離
-        dist_direction = self.data.loc[self.data['t'] == time_step, 'space_'+direction]
+        dist_direction = self_veh['space_'+direction]
         # 此環境車與本車的相對縱向位置
-        sur_veh_rx = (
-            sur_veh.data.loc[sur_veh.data['t'] == time_step, 'x'].values[0] - self.data.loc[self.data['t'] == time_step, 'x'].values[0]
-        )
+        sur_veh_rx = sur_veh_t['x'].values[0] - self_veh['x'].values[0]
         # 此環境車與本車的相對橫向位置
-        sur_veh_ry = (
-            sur_veh.data.loc[sur_veh.data['t'] == time_step, 'y'].values[0] - self.data.loc[self.data['t'] == time_step, 'y'].values[0]
-        )
+        sur_veh_ry = sur_veh_t['y'].values[0] - self_veh['y'].values[0]
         # 此環境車與本車的相對縱向速率
-        sur_veh_rv_lon = (
-                sur_veh.data.loc[sur_veh.data['t'] == time_step, 'v_lon'].values[0] - self.data.loc[sur_veh.data['t'] == time_step, 'v_lon'].values[0]
-        )
+        sur_veh_rv_lon = sur_veh_t['v_lon'].values[0] - self_veh['v_lon'].values[0]
         # 此環境車與本車的相對橫向速率
-        sur_veh_rv_lat = (
-                sur_veh.data.loc[sur_veh.data['t'] == time_step, 'v_lat'].values[0] - self.data.loc[sur_veh.data['t'] == time_step, 'v_lat'].values[0]
-        )
+        sur_veh_rv_lat = sur_veh_t['v_lat'].values[0] - self_veh['v_lat'].values[0]
         # 如果某方位的周圍車與本車的距離是 nan 或 值大於此環境車與本車的距離，則將此周圍車指派此方位周圍車
         if (dist_direction.isnull().values[0]) or (dist_direction.values[0] > self.distance(sur_veh, time_step)):
             self.data.loc[self.data['t'] == time_step, 'num_'+direction] = sur_veh.num
@@ -421,15 +302,13 @@ class Vehicle:
         delta_x = self.data['x'].shift(-1) - self.data['x'].shift(1)  # delta_x = x(t+1)-x(t-1)
         delta_y = self.data['y'].shift(-1) - self.data['y'].shift(1)  # delta_y = y(t+1)-y(t-1)
 
-        # self.data['v'] = np.power(
-        #     np.power(delta_x / (2 / 30), 2) + np.power(delta_y / (2 / 30), 2), 0.5
-        # )  # 速度v = ( {[x(t+1)-x(t-1)]/(2/30)}^2 + {[y(t+1)-y(t-1)]/(2/30)}^2) ^ (0.5)
-        #
-        self.data['v_lon'] = delta_x / (2 / 30)
-        self.data['v_lat'] = delta_y / (2 / 30)
-        self.data['a_lon'] = (self.data['v_lon'].shift(-1) - self.data['v_lon'].shift(1)) / (2 / 30)  # 縱向加速度
-        self.data['a_lat'] = (self.data['v_lat'].shift(-1) - self.data['v_lat'].shift(1)) / (2 / 30)  # 側向加速度
+        self.data['v_lon'] = delta_x / (2 / 30)     # 縱向速度 (m/s)
+        self.data['v_lat'] = delta_y / (2 / 30)     # 側向速度 (m/s)
+        self.data['a_lon'] = (self.data['v_lon'].shift(-1) - self.data['v_lon'].shift(1)) / (2 / 30)  # 縱向加速度 (m/s^2)
+        self.data['a_lat'] = (self.data['v_lat'].shift(-1) - self.data['v_lat'].shift(1)) / (2 / 30)  # 側向加速度 (m/s^2)
         self.data['theta'] = np.arctan2(delta_y, delta_x) * 180 / np.pi  # 行進角度
+        self.data.dropna(axis=0, subset=['a_lon', 'a_lat'], inplace=True)    # drop a=nan的row (避免往後計算時出錯)
+        self.data.reset_index(drop=True, inplace=True)
 
     def __set_size(self):
         if self.__type == 'motor' or self.__type == 'bike':
