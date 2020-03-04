@@ -80,7 +80,7 @@ class Simulation:
 
                 x_features = self.__input(input_var=input_var)
                 y_features = self.__output(output_var=output_var)
-                print("veh.data.shape:", veh.data.shape)
+                # print("veh.data.shape:", veh.data.shape)
                 veh_in = veh.data.reindex(columns=x_features)
                 veh_out = veh.data.reindex(columns=y_features)
 

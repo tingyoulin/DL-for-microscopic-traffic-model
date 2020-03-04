@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import os, sys
 
 
@@ -257,6 +258,10 @@ class Vehicle:
         self.__calculate()  # 計算速度、加速度、行進角度
 
         return self.data
+
+    def plot_trajectory(self):
+        
+        pass
 
     def set_type(self, vtype):
         self.__type = vtype
