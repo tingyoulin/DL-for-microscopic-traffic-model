@@ -108,8 +108,8 @@ class Environment:
         計算每時點的環境車輛相關變數
         :param veh: 本車
         """
-        sur_cols = ['num', 'type', 'rx', 'ry', 'space', 'rv_lon', 'rv_lat']
-        veh.add_columns(cols=sur_cols, is_sur=True, value=np.nan)    # 創建環境車輛相關columns
+        sur_cols = ['num', 'bike', 'bus', 'car', 'motor', 'pickup', 'small bus',  'rx', 'ry', 'space', 'rv_lon', 'rv_lat']
+        veh.add_columns(cols=sur_cols, is_sur=True, value=0)    # 創建環境車輛相關 columns
 
         for ts in veh.data['t']:
             sur_vehicles = self.__drop_self(v_list=self.__time_step[ts], veh=veh)
@@ -171,7 +171,7 @@ class Vehicle:
     def __str__(self):
         return str(self.num) + '_' + self.__type   # print Vehicle出來時，格式為num_type
 
-    def add_columns(self, cols, is_sur=False, value=np.nan):
+    def add_columns(self, cols, is_sur=False, value=0):
         if is_sur:
             for sur_direction in self.__sur_direction:
                 for col in cols:
@@ -251,7 +251,7 @@ class Vehicle:
             """如果找不到header，就使用自訂的columns name"""
             self.data = pd.read_csv(
                 file,
-                names=['t', 'x', 'y', 'v_lon', 'v_lat', 'a_lon', 'a_lat', 'theta'],
+                names=['t', 'x', 'y', 'v_lon', 'v_lat', 'a', 'theta'],
                 encoding='utf-8'
             )
         self.num = os.path.split(file)[1].split('_')[0]
@@ -292,10 +292,10 @@ class Vehicle:
         sur_veh_rv_lon = sur_veh_t['v_lon'].values[0] - self_veh['v_lon'].values[0]
         # 此環境車與本車的相對橫向速率
         sur_veh_rv_lat = sur_veh_t['v_lat'].values[0] - self_veh['v_lat'].values[0]
-        # 如果某方位的周圍車與本車的距離是 nan 或 值大於此環境車與本車的距離，則將此周圍車指派此方位周圍車
-        if (dist_direction.isnull().values[0]) or (dist_direction.values[0] > self.distance(sur_veh, time_step)):
-            self.data.loc[self.data['t'] == time_step, 'num_'+direction] = sur_veh.num
-            self.data.loc[self.data['t'] == time_step, 'type_'+direction] = sur_veh.get_type()
+        # 如果某方位的周圍車與本車的距離是 nan 或 值大於此周圍車與本車的距離，則將此周圍車指派此方位周圍車
+        if (dist_direction.values[0] == 0) or (dist_direction.values[0] > self.distance(sur_veh, time_step)):
+            self.data.loc[self.data['t'] == time_step, 'num_' + direction] = sur_veh.num
+            self.data.loc[self.data['t'] == time_step, '%s_%s' % (sur_veh.get_type(), direction)] = 1               # identify the type of surrounding vehicles
             self.data.loc[self.data['t'] == time_step, 'rx_' + direction] = sur_veh_rx
             self.data.loc[self.data['t'] == time_step, 'ry_' + direction] = sur_veh_ry
             self.data.loc[self.data['t'] == time_step, 'space_'+direction] = self.distance(sur_veh, time_step)
@@ -309,10 +309,12 @@ class Vehicle:
 
         self.data['v_lon'] = delta_x / (2 / 30)     # 縱向速度 (m/s)
         self.data['v_lat'] = delta_y / (2 / 30)     # 側向速度 (m/s)
-        self.data['a_lon'] = (self.data['v_lon'].shift(-1) - self.data['v_lon'].shift(1)) / (2 / 30)  # 縱向加速度 (m/s^2)
-        self.data['a_lat'] = (self.data['v_lat'].shift(-1) - self.data['v_lat'].shift(1)) / (2 / 30)  # 側向加速度 (m/s^2)
+        v = np.power(np.power(self.data['v_lon'], 2) + np.power(self.data['v_lat'], 2), 0.5)
+        self.data['a'] = (v.shift(-1) - v.shift(1)) / (2 / 30)  # 加速度 (m/s^2)
+        # self.data['a_lon'] = (self.data['v_lon'].shift(-1) - self.data['v_lon'].shift(1)) / (2 / 30)  # 縱向加速度 (m/s^2)
+        # self.data['a_lat'] = (self.data['v_lat'].shift(-1) - self.data['v_lat'].shift(1)) / (2 / 30)  # 側向加速度 (m/s^2)
         self.data['theta'] = np.arctan2(delta_y, delta_x) * 180 / np.pi  # 行進角度
-        self.data.dropna(axis=0, subset=['a_lon', 'a_lat'], inplace=True)    # drop a=nan的row (避免往後計算時出錯)
+        self.data.dropna(axis=0, subset=['a'], inplace=True)    # drop a=nan的row (避免往後計算時出錯)
         self.data.reset_index(drop=True, inplace=True)
 
     def __set_size(self):

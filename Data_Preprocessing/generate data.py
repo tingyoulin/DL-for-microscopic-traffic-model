@@ -9,7 +9,7 @@ class Simulation:
         self.INPUT_TIME_STEP = input_time_step
         self.OUTPUT_TIME_STEP = output_time_step
 
-    def data_generator(self, base_dir=os.path.join(os.getcwd(), os.pardir, 'Trajectory Data'), input_var=None, output_var=None):
+    def data_generator(self, base_dir=os.path.join(os.getcwd(), os.pardir, 'Trajectory Data'), input_var='v', output_var='v'):
         # 最終的資料存在 Users/User/Google Drive/Master Thesis/Data'
         final_data_dir = os.path.join(os.path.split(base_dir)[0], 'Data')
         env_list, x, y = [], None, None
@@ -47,8 +47,6 @@ class Simulation:
             env = Environment(name=env_name, base_dir=env_path)
             # 對環境資料夾中每個 車輛軌跡檔, road env 檔做事
             for veh_num in os.listdir(env_path):
-                # print(veh_num)
-
                 # 用 road env 檔建立道路環境設施
                 if veh_num == 'road env.txt':
                     df_env = pd.read_csv(os.path.join(base_dir, env_name, veh_num), header=1, encoding='utf-8')
@@ -127,16 +125,16 @@ class Simulation:
         return x_reshape, y_reshape, env_list
 
     def __input(self, input_var):
-        features = ['v_lon', 'v_lat', 'a_lon', 'a_lat',
-                    'type_F', 'rx_F', 'ry_F', 'space_F', 'rv_lon_F', 'rv_lat_F',
-                    'type_LF', 'rx_LF', 'ry_LF', 'space_LF', 'rv_lon_LF', 'rv_lat_LF',
-                    'type_RF', 'rx_RF', 'ry_RF', 'space_RF', 'rv_lon_RF', 'rv_lat_RF',
-                    'type_LR', 'rx_LR', 'ry_LR', 'space_LR', 'rv_lon_LR', 'rv_lat_LR',
-                    'type_RR', 'rx_RR', 'ry_RR', 'space_RR', 'rv_lon_RR', 'rv_lat_RR',
-                    'curb', 'slow mix', 'mix fast', 'center']
-        if input_var is None or input_var == 'v':
-            features.remove('a_lon')
-            features.remove('a_lat')
+        features = ['v_lon', 'v_lat', 'a', 'theta',
+                    'bike_F', 'bus_F', 'car_F', 'motor_F', 'pickup_F', 'small bus_F', 'rx_F', 'ry_F', 'space_F', 'rv_lon_F', 'rv_lat_F',
+                    'bike_LF', 'bus_LF', 'car_LF', 'motor_LF', 'pickup_LF', 'small bus_LF', 'rx_LF', 'ry_LF', 'space_LF', 'rv_lon_LF', 'rv_lat_LF',
+                    'bike_RF', 'bus_RF', 'car_RF', 'motor_RF', 'pickup_RF', 'small bus_RF', 'rx_RF', 'ry_RF', 'space_RF', 'rv_lon_RF', 'rv_lat_RF',
+                    'bike_LR', 'bus_LR', 'car_LR', 'motor_LR', 'pickup_LR', 'small bus_LR', 'rx_LR', 'ry_LR', 'space_LR', 'rv_lon_LR', 'rv_lat_LR',
+                    'bike_RR', 'bus_RR', 'car_RR', 'motor_RR', 'pickup_RR', 'small bus_RR', 'rx_RR', 'ry_RR', 'space_RR', 'rv_lon_RR', 'rv_lat_RR',
+                    'curb', 'slow_mix', 'mix_fast', 'center']
+        if input_var == 'v':
+            features.remove('a')
+            features.remove('theta')
             return features
         elif input_var == 'a':
             features.remove('v_lon')
@@ -147,10 +145,10 @@ class Simulation:
             sys.exit(0)
 
     def __output(self, output_var):
-        if output_var is None or output_var == 'v':
+        if output_var == 'v':
             return ['v_lon', 'v_lat']
         elif output_var == 'a':
-            return ['a_lon', 'a_lat']
+            return ['a', 'theta']
         else:
             print('The output variables are limited to V or A.')
             sys.exit(0)
@@ -173,5 +171,5 @@ base_dir = os.path.join(os.getcwd(), os.pardir, 'Trajectory Data')
 # env1.add_vehicles([veh3, veh4, veh5])
 # df = env1.get_data()
 
-sim = Simulation(input_time_step=5, output_time_step=5)
-X, y, env_list = sim.data_generator(base_dir=os.path.join(os.getcwd(), os.pardir, 'Trajectory Data'), input_var=None)
+sim = Simulation(input_time_step=5, output_time_step=1)
+X, y, env_list = sim.data_generator(base_dir=os.path.join(os.getcwd(), os.pardir, 'Trajectory Data'), input_var='a')
