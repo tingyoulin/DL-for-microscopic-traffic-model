@@ -108,7 +108,8 @@ class Environment:
         計算每時點的環境車輛相關變數
         :param veh: 本車
         """
-        sur_cols = ['num', 'bike', 'bus', 'car', 'motor', 'pickup', 'small bus',  'rx', 'ry', 'space', 'rv_lon', 'rv_lat']
+        sur_cols = ['num', 'bike', 'bus', 'car', 'motor', 'pickup', 'small bus', 
+                    'rx', 'ry', 'space', 'rv_lon', 'rv_lat']
         veh.add_columns(cols=sur_cols, is_sur=True, value=0)    # 創建環境車輛相關 columns
 
         for ts in veh.data['t']:
@@ -175,7 +176,11 @@ class Vehicle:
         if is_sur:
             for sur_direction in self.__sur_direction:
                 for col in cols:
-                    self.data["%s_%s" % (col, sur_direction)] = value
+                    if col in ['space', 'rx', 'ry']:
+                        self.data["%s_%s" % (col, sur_direction)] = 999
+                    else:
+                        self.data["%s_%s" % (col, sur_direction)] = value
+
         else:
             for col in cols:
                 self.data[col] = value
@@ -190,16 +195,14 @@ class Vehicle:
         """
         self_veh_x = self.data.loc[self.data['t'] == time_step, 'x'].values[0]
         self_veh_y = self.data.loc[self.data['t'] == time_step, 'y'].values[0]
-        self_veh_length, self_veh_width = self.__length, self.__width
         sur_veh_x = sur_veh.data.loc[sur_veh.data['t'] == time_step, 'x'].values[0]
         sur_veh_y = sur_veh.data.loc[sur_veh.data['t'] == time_step, 'y'].values[0]
-        sur_veh_length, sur_veh_width = sur_veh.get_size()
 
-        if (sur_veh_x - (sur_veh_length/2)) >= (self_veh_x + (self_veh_length/2)):
-            """車尾已超過本車的車頭，則定義為 前車(F, LF, RF)"""
-            if (sur_veh_y - (sur_veh_width/2)) > (self_veh_y + (self_veh_width/2)):
+        if sur_veh_x >= (self_veh_x + (self.__length/2)):
+            """車身中段已超過本車的車頭，則定義為 前車(F, LF, RF)"""
+            if (sur_veh_y - (sur_veh.get_size()[1]/2)) > (self_veh_y + (self.__width/2)):
                 return 'LF'  # 如果前車的右側車身大於本車的左側車身，則定義為 左前車LF
-            elif (sur_veh_y + (sur_veh_width/2)) < (self_veh_y - (self_veh_width/2)):
+            elif (sur_veh_y + (sur_veh.get_size()[1]/2)) < (self_veh_y - (self.__width/2)):
                 return 'RF'  # 如果前車的左側車身小於本車的右側車身，則定義為 右前車RF
             else:
                 return 'F'  # 如果前兩個狀況都不符合，則定義為 (正)前車F
@@ -280,27 +283,36 @@ class Vehicle:
             print('sur_veh:', sur_veh)
             print('time_step:', time_step)
         ##
-        self_veh = self.data.loc[self.data['t'] == time_step, :]
+        self_veh_t = self.data.loc[self.data['t'] == time_step, :]
         sur_veh_t = sur_veh.data.loc[sur_veh.data['t'] == time_step, :]
-        # 某方位的環境車輛與本車的距離
-        dist_direction = self_veh['space_'+direction]
         # 此環境車與本車的相對縱向位置
-        sur_veh_rx = sur_veh_t['x'].values[0] - self_veh['x'].values[0]
+        sur_veh_rx = sur_veh_t['x'].values[0] - self_veh_t['x'].values[0]
         # 此環境車與本車的相對橫向位置
-        sur_veh_ry = sur_veh_t['y'].values[0] - self_veh['y'].values[0]
-        # 此環境車與本車的相對縱向速率
-        sur_veh_rv_lon = sur_veh_t['v_lon'].values[0] - self_veh['v_lon'].values[0]
-        # 此環境車與本車的相對橫向速率
-        sur_veh_rv_lat = sur_veh_t['v_lat'].values[0] - self_veh['v_lat'].values[0]
-        # 如果某方位的周圍車與本車的距離是 nan 或 值大於此周圍車與本車的距離，則將此周圍車指派此方位周圍車
-        if (dist_direction.values[0] == 0) or (dist_direction.values[0] > self.distance(sur_veh, time_step)):
+        sur_veh_ry = sur_veh_t['y'].values[0] - self_veh_t['y'].values[0]
+        # 某方位的環境車輛與本車的車間距離
+        origin_space = self_veh_t['space_' + direction].values[0]
+        # 此環境車與本車的車間距離
+        space_lon = abs(sur_veh_rx) - (self.__length + sur_veh.get_size()[0]) / 2
+        space_lon = 0 if space_lon <= 0 else space_lon
+        space_lat = abs(sur_veh_ry) - (self.__width + sur_veh.get_size()[1]) / 2
+        space_lat = 0 if space_lat <= 0 else space_lat
+        space = np.power(np.power(space_lon, 2) + np.power(space_lat, 2), 0.5)
+        origin_space = self_veh_t['space_' + direction].values[0]
+
+        # 如果某方位的原周圍車與本車的距離 (default=999) 大於 此周圍車與本車的距離，則將此周圍車指派此方位周圍車
+        if origin_space > space:
+            # 此環境車與本車的相對縱向速率
+            sur_veh_rv_lon = sur_veh_t['v_lon'].values[0] - self_veh_t['v_lon'].values[0]
+            # 此環境車與本車的相對橫向速率
+            sur_veh_rv_lat = sur_veh_t['v_lat'].values[0] - self_veh_t['v_lat'].values[0]
+
             self.data.loc[self.data['t'] == time_step, 'num_' + direction] = sur_veh.num
-            self.data.loc[self.data['t'] == time_step, '%s_%s' % (sur_veh.get_type(), direction)] = 1               # identify the type of surrounding vehicles
+            self.__sur_type_encode(sur_type=sur_veh.get_type(), direction=direction, time_step=time_step)   # identify the type of surrounding vehicles
             self.data.loc[self.data['t'] == time_step, 'rx_' + direction] = sur_veh_rx
             self.data.loc[self.data['t'] == time_step, 'ry_' + direction] = sur_veh_ry
-            self.data.loc[self.data['t'] == time_step, 'space_'+direction] = self.distance(sur_veh, time_step)
-            self.data.loc[self.data['t'] == time_step, 'rv_lon_'+direction] = sur_veh_rv_lon
-            self.data.loc[self.data['t'] == time_step, 'rv_lat_'+direction] = sur_veh_rv_lat
+            self.data.loc[self.data['t'] == time_step, 'space_' + direction] = space
+            self.data.loc[self.data['t'] == time_step, 'rv_lon_' + direction] = sur_veh_rv_lon
+            self.data.loc[self.data['t'] == time_step, 'rv_lat_' + direction] = sur_veh_rv_lat
 
     def __calculate(self):
         """計算速度、加速度、行進角度"""
@@ -333,3 +345,7 @@ class Vehicle:
         elif self.__type == 'bus' or self.__type == 'bus (parking)':
             self.__length = 12.0
             self.__width = 3.0
+
+    def __sur_type_encode(self, sur_type, direction, time_step):
+        for _type in ['bike', 'bus', 'car', 'motor', 'pickup', 'small bus']:
+            self.data.loc[self.data['t'] == time_step, '%s_%s' % (_type, direction)] = 1 if _type == sur_type else 0
