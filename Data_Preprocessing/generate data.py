@@ -9,29 +9,35 @@ class Simulation:
         self.INPUT_TIME_STEP = input_time_step
         self.OUTPUT_TIME_STEP = output_time_step
 
-    def data_generator(self, base_dir=os.path.join(os.getcwd(), os.pardir, 'Trajectory Data'), input_var='v', output_var='v'):
+    def data_generator(self, model, input_var='v', output_var='v'):
+        # 最後的 x, y 以 model 名稱區別
+        # final_dir = os.path.join(os.path.split(traj_data_dir)[0], final_dir)
+        traj_data_dir='/mnt/c/Users/User/Google Drive/Master Thesis/Trajectory Data'
         # 最終的資料存在 Users/User/Google Drive/Master Thesis/Data'
-        final_data_dir = os.path.join(os.path.split(base_dir)[0], 'Data')
+        final_data_dir = '/mnt/c/Users/User/Google Drive/Master Thesis/Data'
         env_list, x, y = [], None, None
         
         # 對 base資料夾中每個 環境目錄 做事)
-        for env_name in os.listdir(base_dir):
+        for env_name in os.listdir(traj_data_dir):
             print(env_name)
             env_start_time = time.time()
-            env_path = os.path.join(base_dir, env_name)
+            env_path = os.path.join(traj_data_dir, env_name)
             final_env_path = os.path.join(final_data_dir, env_name)
 
-            if not os.path.isdir(env_path):             # 跳過base_dir裡 (非環境目錄) 的檔案
+            # 跳過traj_data_dir裡 (非環境目錄) 的檔案
+            if not os.path.isdir(env_path):
                 continue
-            elif not os.path.isdir(final_env_path):     # 若存放計算過車輛資料的環境目錄 (final_env_path) 不存在，就建立新的環境目錄
+            # 若存放計算過車輛資料的環境目錄 (final_env_path) 不存在，就建立新的環境目錄
+            elif not os.path.isdir(final_env_path):
                 os.mkdir(final_env_path)
             
             # 跳過已經計算過的環境 (已經有 X.npy, Y.npy)
-            if os.path.isfile(os.path.join(final_env_path, 'X.npy')) and os.path.isfile(os.path.join(final_env_path, 'Y.npy')):
-                env_x = np.load(os.path.join(final_env_path, 'X.npy'), allow_pickle=True)
-                env_y = np.load(os.path.join(final_env_path, 'Y.npy'), allow_pickle=True)    # 從 .npy 檔載入已經算好的數據
+            if os.path.isfile(final_env_path + '/{}_X.npy'.format(model)) and os.path.isfile(final_env_path + '/{}_Y.npy'.format(model)):
+                env_x = np.load(final_env_path + '/{}_X.npy'.format(model), allow_pickle=True)
+                env_y = np.load(final_env_path + '/{}_Y.npy'.format(model), allow_pickle=True)    # 從 .npy 檔載入已經算好的數據
                 print('env_x.shape:', env_x.shape)
                 print('env_y.shape:', env_y.shape)
+
                 # 如果 x 或 y 是空的
                 if x is None or y is None:
                     x = env_x.copy()
@@ -49,7 +55,7 @@ class Simulation:
             for veh_num in os.listdir(env_path):
                 # 用 road env 檔建立道路環境設施
                 if veh_num == 'road env.txt':
-                    df_env = pd.read_csv(os.path.join(base_dir, env_name, veh_num), header=1, encoding='utf-8')
+                    df_env = pd.read_csv(os.path.join(traj_data_dir, env_name, veh_num), header=1, encoding='utf-8')
 
                     # 設定道路設施參數
                     slow_mix = df_env.loc[0, 'slow mix']
@@ -61,7 +67,7 @@ class Simulation:
                 elif veh_num.split('.')[-1] != 'txt':
                     continue
                 
-                traj_file = os.path.join(base_dir, env_name, veh_num)
+                traj_file = os.path.join(traj_data_dir, env_name, veh_num)
                 vtype = veh_num.split('.')[0].split('_')[1]      # 取得車種
                 veh = Vehicle(vtype)                             # 建立新的 Vehicle 物件
                 veh.load_data(traj_file)                         # 載入車輛軌跡檔
@@ -69,8 +75,8 @@ class Simulation:
             
             # 將該環境放入 環境list 中
             env_list.append(env)
-
             print("Loading Trajectory Data Done!!")
+
             for veh in env.get_data():
                 # 跳過不是機車的車輛
                 if veh.get_type() != 'motor':
@@ -79,6 +85,7 @@ class Simulation:
                 x_features = self.__input(input_var=input_var)
                 y_features = self.__output(output_var=output_var)
                 # print("veh.data.shape:", veh.data.shape)
+                # TODO: 檢查 reindex 有沒有問題
                 veh_in = veh.data.reindex(columns=x_features)
                 veh_out = veh.data.reindex(columns=y_features)
 
@@ -86,14 +93,16 @@ class Simulation:
                 for index in range(self.INPUT_TIME_STEP, len(veh_in)-self.OUTPUT_TIME_STEP+1):
                     env_x.append(np.array(veh_in.loc[index-self.INPUT_TIME_STEP:index-1, :]))
                     env_y.append(np.array(veh_out.loc[index:index+self.OUTPUT_TIME_STEP-1, :]))
-                    if env_x[-1].shape[0] != self.INPUT_TIME_STEP:
-                        print("env:", env, "veh:", veh)
-                        print("env_x[-1].shape:", env_x[-1].shape)
-                        print("[index-self.INPUT_TIME_STEP:index-1]:", [index-self.INPUT_TIME_STEP, index-1])
-                    elif env_y[-1].shape[0] != self.OUTPUT_TIME_STEP:
-                        print("env:", env, "veh:", veh)
-                        print("env_y[-1].shape:", env_y[-1].shape)
-                        print("[index:index+self.OUTPUT_TIME_STEP-1]:", [index, index+self.OUTPUT_TIME_STEP-1])
+
+                    # look for bug
+                    # if env_x[-1].shape[0] != self.INPUT_TIME_STEP:
+                    #     print("env:", env, "veh:", veh)
+                    #     print("env_x[-1].shape:", env_x[-1].shape)
+                    #     print("[index-self.INPUT_TIME_STEP:index-1]:", [index-self.INPUT_TIME_STEP, index-1])
+                    # elif env_y[-1].shape[0] != self.OUTPUT_TIME_STEP:
+                    #     print("env:", env, "veh:", veh)
+                    #     print("env_y[-1].shape:", env_y[-1].shape)
+                    #     print("[index:index+self.OUTPUT_TIME_STEP-1]:", [index, index+self.OUTPUT_TIME_STEP-1])
 
             env_x = np.array(env_x)
             env_y = np.array(env_y)
@@ -101,8 +110,8 @@ class Simulation:
             print('env_y.shape:', env_y.shape)
 
             # 存.npy檔
-            np.save(os.path.join(final_env_path, 'X.npy'), env_x)
-            np.save(os.path.join(final_env_path, 'Y.npy'), env_y)
+            np.save(final_env_path + '/{}_X.npy'.format(model), env_x)
+            np.save(final_env_path + '/{}_Y.npy'.format(model), env_y)
 
             # 將 env_x, env_y 放進 x, y
             if x is None or y is None:
@@ -153,7 +162,6 @@ class Simulation:
             print('The output variables are limited to V or A.')
             sys.exit(0)
 
-base_dir = os.path.join(os.getcwd(), os.pardir, 'Trajectory Data')
 
 # env1 = Environment()
 # veh1 = Vehicle('car')
@@ -172,4 +180,4 @@ base_dir = os.path.join(os.getcwd(), os.pardir, 'Trajectory Data')
 # df = env1.get_data()
 
 sim = Simulation(input_time_step=5, output_time_step=1)
-X, y, env_list = sim.data_generator(base_dir=os.path.join(os.getcwd(), os.pardir, 'Trajectory Data'), input_var='a')
+X, y, env_list = sim.data_generator(model='lstm', input_var='a', output_var='v')

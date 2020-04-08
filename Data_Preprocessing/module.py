@@ -30,9 +30,9 @@ class Environment:
 
     def add_vehicles(self, *vehs):
         """
-        在DataFrame中增加一輛車，
-        :param veh:
-        :return:
+            在DataFrame中增加一輛車，
+            :param veh:
+            :return:
         """
         # 對每個傳入的 Vehicle物件 做事
         for veh in vehs:
@@ -51,7 +51,8 @@ class Environment:
 
     def get_data(self, sim_motor='all', sur_vehicles='all', interval='all'):
         """針對每台機車做計算"""
-        final_env_path = os.path.join(self.__base_dir, os.pardir, os.pardir, "Data", self.__name)
+        final_data_dir='/mnt/c/Users/User/Google Drive/Master Thesis/Data'
+        final_env_path = os.path.join(final_data_dir, self.__name)
 
         # 如果要取得環境中每輛機車的 data, 且所有車都可被當作是周圍車
         if sim_motor == 'all' and sur_vehicles == 'all':
@@ -96,6 +97,7 @@ class Environment:
 
     def __calculate_env(self, veh):
         length, width = veh.get_size()
+        del length
 
         for facility in ['curb', 'slow_mix', 'mix_fast', 'center']:
             veh.data[facility] = veh.data['y'] - self.__road_env[facility]
@@ -105,8 +107,8 @@ class Environment:
 
     def __calculate_surrounding_vehicles(self, veh):
         """
-        計算每時點的環境車輛相關變數
-        :param veh: 本車
+            計算每時點的環境車輛相關變數
+            :param veh: 本車
         """
         sur_cols = ['num', 'bike', 'bus', 'car', 'motor', 'pickup', 'small bus', 
                     'rx', 'ry', 'space', 'rv_lon', 'rv_lat']
@@ -121,10 +123,10 @@ class Environment:
 
     def __drop_self(self, v_list, veh):
         """
-        清掉 list中 value 是本車輛的 key-value pair
-        :param v_list: 是一個包含在某時階所有車輛的list
-        :param veh: 本車
-        :return: 不包含本車的list
+            清掉 list中 value 是本車輛的 key-value pair
+            :param v_list: 是一個包含在某時階所有車輛的list
+            :param veh: 本車
+            :return: 不包含本車的list
         """
         new_list = list()
         for v in v_list:
@@ -188,10 +190,10 @@ class Vehicle:
 
     def direction(self, sur_veh, time_step):
         """
-        計算本車與環境車輛在某時點的方位關係
-        :param sur_veh: 某時點的環境車輛
-        :param time_step:
-        :return: 某時點與環境車輛的方位關係
+            計算本車與環境車輛在某時點的方位關係
+            :param sur_veh: 某時點的環境車輛
+            :param time_step:
+            :return: 某時點與環境車輛的方位關係
         """
         self_veh_x = self.data.loc[self.data['t'] == time_step, 'x'].values[0]
         self_veh_y = self.data.loc[self.data['t'] == time_step, 'y'].values[0]
@@ -215,10 +217,10 @@ class Vehicle:
 
     def distance(self, sur_veh, time_step):
         """
-        計算本車與環境車輛在某時點的直線距離
-        :param sur_veh: 某時點的環境車輛
-        :param time_step:
-        :return: 某時點與環境車輛的距離
+            計算本車與環境車輛在某時點的直線距離
+            :param sur_veh: 某時點的環境車輛
+            :param time_step:
+            :return: 某時點與環境車輛的距離
         """
         self_veh_x = self.data.loc[self.data['t'] == time_step, 'x'].values[0]
         self_veh_y = self.data.loc[self.data['t'] == time_step, 'y'].values[0]
@@ -235,18 +237,19 @@ class Vehicle:
 
     def load_data(self, file):
         """
-        讀取每輛車的Tracker資料
-        :param file: Tracker資料(.txt)
-        :return: self.data (pandas.DataFrame)
+            讀取每輛車的Tracker資料
+            :param file: Tracker資料(.txt)
+            :return: self.data (pandas.DataFrame)
         """
         fin = open(file, encoding='utf-8')
         flines = fin.readlines()  # flines是一個list，每個element是file中的每一行
 
         for i in range(len(flines)):
-            """找DataFrame的header (行開頭是t的)"""
-            if flines[i].lstrip()[0] == 't':
+            """找DataFrame的header (行開頭是 t or step 的)"""
+            if flines[i].lstrip()[0] == 't' or flines[i].lstrip()[0:4] == 'step':
                 input_df = pd.read_csv(file, header=i, encoding='utf-8')
-                self.data = input_df.loc[:, ['t', 'x', 'y']].copy()
+                input_df.rename(columns={'step': 't'}, inplace=True)
+                self.data = input_df.reindex(columns=['t', 'x', 'y'])
                 del input_df
                 break
 
@@ -266,15 +269,42 @@ class Vehicle:
         
         pass
 
+    def predict(self, model, time_step=5):
+        # 初始 5 time steps
+        test_a = np.array(self.data.loc[0:4, 5:6])          # a, theta
+        test_f = np.array(self.data.loc[0:4, 8:18])         # F
+        test_lf = np.array(self.data.loc[0:4, 20:30])       # LF
+        test_rf = np.array(self.data.loc[0:4, 32:42])
+        test_lr = np.array(self.data.loc[0:4, 44:54])
+        test_rr = np.array(self.data.loc[0:4, 56:66])
+        test_infras = np.array(self.data.loc[0:4, 68:71])
+
+        current_v_lon = self.data.loc[4, 'v_lon']
+        current_v_lat = self.data.loc[4, 'v_lat']
+
+        for time in range(len(self.data)-time_step):
+            pred_v_lon, pred_v_lat = model.predict([test_a, test_f, test_lf, test_rf, test_lr, test_rr, test_infras])
+            pred_a = (np.power(np.power(pred_v_lon - current_v_lon, 2) + np.power(pred_v_lat - current_v_lat, 2), 0.5)) / (2 / 30)                   # 加速度 (m/s^2)
+            pred_theta = np.arctan2(pred_v_lat, pred_v_lon) * 180 / np.pi    # 行進角度
+
+            # 更新下一time step 的 input
+            test_a = np.vstack([test_a[-4:], [pred_a, pred_theta]])     # a, theta
+            test_f = np.array(self.data.loc[time:time+4, 8:18])         # F
+            test_lf = np.array(self.data.loc[time:time+4, 20:30])       # LF
+            test_rf = np.array(self.data.loc[time:time+4, 32:42])
+            test_lr = np.array(self.data.loc[time:time+4, 44:54])
+            test_rr = np.array(self.data.loc[time:time+4, 56:66])
+            test_infras = np.array(self.data.loc[time:time+4, 68:71])
+
     def set_type(self, vtype):
         self.__type = vtype
         self.__set_size()  # 調整length, width
 
     def switch_direction(self, sur_veh, time_step):
         """
-        查看此環境車的方位關係，且如果(該方位沒有其他車輛 或 此環境車距離較短)，則更新相關資訊
-        :param sur_veh: 環境車
-        :param time_step:
+            查看此環境車的方位關係，且如果(該方位沒有其他車輛 或 此環境車距離較短)，則更新相關資訊
+            :param sur_veh: 環境車
+            :param time_step:
         """
         direction = self.direction(sur_veh, time_step)   # 環境車與本車的方位關係
 
@@ -339,10 +369,10 @@ class Vehicle:
         elif self.__type == 'pickup':
             self.__length = 5.0
             self.__width = 2.0
-        elif self.__type == 'small bus' or self.__type == 'small bus (parking)':
+        elif self.__type == 'smallbus':
             self.__length = 8.5
             self.__width = 3.0
-        elif self.__type == 'bus' or self.__type == 'bus (parking)':
+        elif self.__type == 'bus':
             self.__length = 12.0
             self.__width = 3.0
 
